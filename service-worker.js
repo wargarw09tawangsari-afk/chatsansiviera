@@ -1,40 +1,67 @@
 const CACHE_NAME = 'chatsansiviera-v1';
-const urlsToCache = [
-  '/',
-  '/index.html',
-  '/manifest.json',
-  'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css',
-  'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css',
-  'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js',
-  'https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'
+
+// Daftar file inti aplikasi lokal yang wajib di-cache saat instalasi
+const STATIC_ASSETS = [
+  './',
+  './index.html',
+  './manifest.json',
+  './icon-192.png',
+  './icon-512.png'
 ];
 
-// 1. Install Service Worker dan Cache Aset Statis
+// 1. Install Service Worker dan Cache Aset Lokal Utama
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      console.log('Cache dibuka');
-      return cache.addAll(urlsToCache);
+      console.log('Cache inti dibuka');
+      return cache.addAll(STATIC_ASSETS);
     })
   );
+  self.skipWaiting();
 });
 
-// 2. Ambil Data dari Cache saat Offline atau Stale-While-Revalidate
+// 2. Fetch Event dengan Strategi Cache-First & Dynamic Caching untuk CDN/Eksternal
 self.addEventListener('fetch', (event) => {
-  // Jangan cache request ke Google Apps Script (karena data chat harus real-time)
-  if (event.request.url.includes('script.google.com')) {
+  let requestUrl = new URL(event.request.url);
+
+  // Jangan pernah cache request ke Google Apps Script agar data chat/database real-time
+  if (requestUrl.origin.includes('script.google.com')) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((response) => {
-      // Kembalikan dari cache jika ada, jika tidak ambil dari internet
-      return response || fetch(event.request);
+    caches.match(event.request).then((cachedResponse) => {
+      // Jika ada di cache, kembalikan dari cache
+      if (cachedResponse) {
+        return cachedResponse;
+      }
+
+      // Jika tidak ada di cache, ambil dari jaringan (internet)
+      return fetch(event.request).then((networkResponse) => {
+        // Validasi response jaringan sebelum disimpan ke cache dinamis
+        if (!networkResponse || networkResponse.status !== 200 || networkResponse.type !== 'basic' && networkResponse.type !== 'cors') {
+          return networkResponse;
+        }
+
+        // Clone response karena stream hanya bisa dibaca sekali
+        let responseToCache = networkResponse.clone();
+
+        caches.open(CACHE_NAME).then((cache) => {
+          cache.put(event.request, responseToCache);
+        });
+
+        return networkResponse;
+      }).catch(() => {
+        // Fallback opsional jika offline dan aset tidak ditemukan
+        if (event.request.headers.get('accept').includes('text/html')) {
+          return caches.match('./index.html');
+        }
+      });
     })
   );
 });
 
-// 3. Update Cache jika ada versi baru
+// 3. Bersihkan Cache Lama saat ada versi baru
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((cacheNames) => {
@@ -48,4 +75,5 @@ self.addEventListener('activate', (event) => {
       );
     })
   );
+  self.clients.claim();
 });

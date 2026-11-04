@@ -1,7 +1,7 @@
 {
   "name": "ChatSansiviera",
   "short_name": "Sansiviera",
-  "start_url": "/index.html",
+  "start_url": "/chatsansiviera/index.html",
   "display": "standalone",
   "background_color": "#efeae2",
   "theme_color": "#008069",
